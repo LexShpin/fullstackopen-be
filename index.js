@@ -1,14 +1,19 @@
+require('dotenv').config()
 const express = require('express')
 const requestLogger = require('./middleware/requestLogger')
 const uknownEndpoint = require('./middleware/uknownEndpoint')
 const cors = require('cors')
+const Note = require('./models/note')
+const errorHandler = require('./middleware/errorHandler')
 
 const app = express()
 
+app.use(express.static('build'))
 app.use(express.json())
 app.use(cors())
 app.use(requestLogger)
-app.use(express.static('build'))
+app.use(errorHandler)
+
 
 
 let notes = [
@@ -31,29 +36,34 @@ app.get('/', (req, res) => {
 })
 
 app.get('/api/notes', (req, res) => {
-    res.json(notes)
+    Note.find({}).then(notes => {
+        console.log(notes)
+        res.json(notes)
+    })
 })
 
 app.get('/api/notes/:id', (req, res) => {
-    const id = req.params.id
-    const note = notes.find(note => note.id == id)
-
-    if (note) {
-        res.json(note)
-    } else {
-        res.status(404).end()
-    }
+    Note.findById(req.params.id)
+        .then(note => {
+            if (note) {
+                res.json(note)
+            } else {
+                res.status(404).end()
+            }
+        })
+        .catch(err => next(err))
 
 })
 
 app.delete('/api/notes/:id', (req, res) => {
-    const id = req.params.id
-    notes = notes.filter(note => note.id != id)
-
-    res.status(204).end()
+    Note.findByIdAndRemove(req.params.id)
+        .then(result => {
+            res.status(204).end()
+        })
+        .catch(err => next(err))
 })
 
-app.post('/api/notes', (req, res) => {
+app.post('/api/notes', (req, res, next) => {
 
     const body = req.body
 
@@ -63,16 +73,31 @@ app.post('/api/notes', (req, res) => {
         })
     }
 
+    const note = new Note({
+        content: body.content,
+        important: body.important || false
+    })
+
+    note.save()
+        .then(savedNote => {
+            res.json(savedNote)
+        })
+        .catch(err => next(err))
+})
+
+app.put('/api/notes/:id', (req, res, next) => {
+    const body = req.body
+
     const note = {
         content: body.content,
-        important: body.important || false,
-        date: new Date(),
-        id: generateId()
+        important: body.important
     }
 
-    notes = notes.concat(note)
-
-    res.json(note)
+    Note.findByIdAndUpdate(req.params.id, note, {new: true, runValidators: true, context: 'query'})
+        .then(updatedNote => {
+            res.json(updatedNote)
+        })
+        .catch(err => next(err))
 })
 
 const PORT = process.env.PORT || 3002 
